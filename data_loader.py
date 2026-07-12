@@ -216,26 +216,27 @@ def run_track(run_id):
     """Return a DataFrame of the single-run track: lat, lon, distance, pace, hr."""
     streams = load_streams(run_id)
     latlng = stream_series(streams, "latlng")
-    if not latlng:
+    if not latlng or all(p is None for p in latlng):
         return pd.DataFrame()
-    dist = stream_series(streams, "distance") or [np.nan] * len(latlng)
-    vel = stream_series(streams, "velocity_smooth")
-    alt = stream_series(streams, "altitude") or [np.nan] * len(latlng)
-    hr = stream_series(streams, "heartrate") or [np.nan] * len(latlng)
+    n = len(latlng)
+    dist = stream_series(streams, "distance") or [np.nan] * n
+    vel = stream_series(streams, "velocity_smooth") or [np.nan] * n
+    alt = stream_series(streams, "altitude") or [np.nan] * n
+    hr = stream_series(streams, "heartrate") or [np.nan] * n
+    v = np.asarray(vel, dtype=float)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        pace = np.where(v > 0.1, (1000.0 / v) / 60.0, np.nan)
     df = pd.DataFrame({
-        "lat": [p[0] for p in latlng],
-        "lon": [p[1] for p in latlng],
+        # latlng is aligned 1:1 with the other streams; gaps (no GPS fix)
+        # are None and get dropped below.
+        "lat": [p[0] if p else np.nan for p in latlng],
+        "lon": [p[1] if p else np.nan for p in latlng],
         "distance_km": np.asarray(dist, dtype=float) / 1000.0,
         "altitude_m": np.asarray(alt, dtype=float),
         "hr": np.asarray(hr, dtype=float),
+        "pace_min_km": pace,
     })
-    if vel:
-        v = np.asarray(vel, dtype=float)
-        with np.errstate(divide="ignore", invalid="ignore"):
-            df["pace_min_km"] = np.where(v > 0.1, (1000.0 / v) / 60.0, np.nan)
-    else:
-        df["pace_min_km"] = np.nan
-    return df
+    return df.dropna(subset=["lat", "lon"]).reset_index(drop=True)
 
 
 # ===========================================================================

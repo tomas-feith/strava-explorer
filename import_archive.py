@@ -91,14 +91,26 @@ def _iso_to_epoch(s):
         return None
 
 
+def _lstrip_xml(data):
+    """Drop leading whitespace/BOM before the XML declaration. Some exports
+    prefix TCX/GPX with spaces, which ElementTree rejects ("XML declaration
+    not at start of entity")."""
+    if isinstance(data, (bytes, bytearray)):
+        return bytes(data).lstrip(b"\xef\xbb\xbf \t\r\n")
+    return data.lstrip("﻿ \t\r\n")
+
+
 def parse_gpx(data):
-    root = ET.fromstring(data)
+    root = ET.fromstring(_lstrip_xml(data))
     ns = {"g": "http://www.topografix.com/GPX/1/1",
           "tpx": "http://www.garmin.com/xmlschemas/TrackPointExtension/v1"}
     pts = {"lat": [], "lon": [], "ele": [], "t": [], "hr": [], "cad": []}
     for trkpt in root.iter("{http://www.topografix.com/GPX/1/1}trkpt"):
-        pts["lat"].append(float(trkpt.get("lat")))
-        pts["lon"].append(float(trkpt.get("lon")))
+        # HR-only devices (e.g. wrist bands on a treadmill) emit trkpts with
+        # no lat/lon -- keep the point (for time/HR), just without a position.
+        lat_a, lon_a = trkpt.get("lat"), trkpt.get("lon")
+        pts["lat"].append(float(lat_a) if lat_a is not None else None)
+        pts["lon"].append(float(lon_a) if lon_a is not None else None)
         ele = trkpt.find("g:ele", ns)
         pts["ele"].append(float(ele.text) if ele is not None else None)
         t = trkpt.find("g:time", ns)
@@ -111,7 +123,7 @@ def parse_gpx(data):
 
 
 def parse_tcx(data):
-    root = ET.fromstring(data)
+    root = ET.fromstring(_lstrip_xml(data))
     tc = "{http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2}"
     ax = "{http://www.garmin.com/xmlschemas/ActivityExtension/v2}"
     pts = {"lat": [], "lon": [], "ele": [], "t": [], "hr": [], "cad": [],
@@ -209,8 +221,12 @@ def build_activity(pts, meta):
         t = pts["t"][i]
         time_s.append(int(t - t0) if t is not None else (time_s[-1] if time_s else 0))
         lat, lon = pts["lat"][i], pts["lon"][i]
+        # Keep latlng aligned 1:1 with the other streams (None where a point
+        # has no GPS fix); consumers filter the gaps.
         if lat is not None and lon is not None:
             latlng.append([round(lat, 6), round(lon, 6)])
+        else:
+            latlng.append(None)
         # Distance: prefer device distance, else integrate GPS.
         if dev_dist and dev_dist[i] is not None:
             cum = float(dev_dist[i])
@@ -231,7 +247,11 @@ def build_activity(pts, meta):
     vel = _smooth(vel, 5)
 
     elapsed = time_s[-1]
-    moving = sum(1 for v in vel if v > 0.5)  # ~seconds moving
+    # Sum the actual time span of moving samples, not the point count. Many
+    # devices record every few seconds, so counting points underestimates
+    # moving time (and inflates pace) by the sampling interval.
+    moving = sum(time_s[i] - time_s[i - 1]
+                 for i in range(1, n) if vel[i] > 0.5)
     distance = dist_cum[-1]
     hr_vals = [h for h in hr if h]
     cad_vals = [c for c in cad if c]
@@ -265,7 +285,7 @@ def build_activity(pts, meta):
         # data_loader multiplies by 2; device cadence is per-leg, so store raw mean.
         "average_cadence": (sum(cad_vals) / len(cad_vals)) if cad_vals else None,
         "kudos_count": None,
-        "start_latlng": latlng[0] if latlng else [None, None],
+        "start_latlng": next((p for p in latlng if p is not None), [None, None]),
     }
     detail = {
         "id": meta["id"],

@@ -96,6 +96,72 @@ def test_build_activity_rejects_single_point():
     assert ia.build_activity(pts, {"id": 1}) is None
 
 
+def test_moving_time_uses_elapsed_span_not_point_count():
+    # Device that samples every 5 s at a steady 3 m/s. Moving time must reflect
+    # the ~295 s actually elapsed, not the 60 sample points. The old code
+    # counted points as seconds, so multi-second sampling inflated pace ~5x
+    # (e.g. producing impossible sub-1:00/km paces).
+    n, step_s, speed = 60, 5, 3.0            # 15 m per 5 s sample
+    pts = {
+        "lat": [38.72 + i * 1e-4 for i in range(n)],
+        "lon": [-9.14] * n,
+        "ele": [10.0] * n,
+        "t": [1000.0 + i * step_s for i in range(n)],
+        "hr": [150] * n,
+        "cad": [85] * n,
+        "dist": [i * step_s * speed for i in range(n)],
+    }
+    s = ia.build_activity(pts, {"id": 7, "name": "Steady", "type": "Run"})["summary"]
+    elapsed = (n - 1) * step_s               # 295 s
+    assert s["elapsed_time"] == elapsed
+    # Moving time is the real span (all samples moving), not the point count.
+    assert s["moving_time"] == pytest.approx(elapsed, abs=step_s)
+    assert s["moving_time"] > n              # guards against the point-count bug
+    # Derived speed equals the real 3 m/s, not the ~15 m/s the bug produced.
+    assert s["average_speed"] == pytest.approx(speed, rel=0.05)
+
+
+def test_parse_tcx_tolerates_leading_whitespace():
+    # Some exports prefix the XML declaration with spaces, which ElementTree
+    # rejects unless we strip them first.
+    tc = "http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2"
+    tcx = (
+        '          <?xml version="1.0" encoding="UTF-8"?>'
+        f'<TrainingCenterDatabase xmlns="{tc}"><Activities><Activity><Lap><Track>'
+        "<Trackpoint><Time>2025-03-01T07:30:00Z</Time><Position>"
+        "<LatitudeDegrees>38.72</LatitudeDegrees>"
+        "<LongitudeDegrees>-9.14</LongitudeDegrees></Position>"
+        "<DistanceMeters>0</DistanceMeters></Trackpoint>"
+        "<Trackpoint><Time>2025-03-01T07:30:03Z</Time><Position>"
+        "<LatitudeDegrees>38.7201</LatitudeDegrees>"
+        "<LongitudeDegrees>-9.14</LongitudeDegrees></Position>"
+        "<DistanceMeters>10</DistanceMeters></Trackpoint>"
+        "</Track></Lap></Activity></Activities></TrainingCenterDatabase>")
+    pts = ia.parse_tcx(tcx.encode())
+    assert pts["lat"] == [38.72, 38.7201]
+    assert pts["dist"] == [0.0, 10.0]
+
+
+def test_parse_gpx_tolerates_missing_latlng():
+    # HR-only devices (treadmill wrist bands) emit trkpts with no lat/lon.
+    gpx = (
+        '<?xml version="1.0"?><gpx version="1.1" '
+        'xmlns="http://www.topografix.com/GPX/1/1" '
+        'xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v1">'
+        "<trk><trkseg>"
+        "<trkpt><time>2025-03-01T07:30:00Z</time><extensions>"
+        "<gpxtpx:TrackPointExtension><gpxtpx:hr>140</gpxtpx:hr>"
+        "</gpxtpx:TrackPointExtension></extensions></trkpt>"
+        "<trkpt><time>2025-03-01T07:30:01Z</time><extensions>"
+        "<gpxtpx:TrackPointExtension><gpxtpx:hr>142</gpxtpx:hr>"
+        "</gpxtpx:TrackPointExtension></extensions></trkpt>"
+        "</trkseg></trk></gpx>")
+    pts = ia.parse_gpx(gpx.encode())
+    assert pts["lat"] == [None, None]
+    assert pts["lon"] == [None, None]
+    assert pts["hr"] == [140, 142]
+
+
 def test_maybe_gunzip_passthrough():
     assert ia.maybe_gunzip("x.gpx", b"plain") == b"plain"
 
