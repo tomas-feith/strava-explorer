@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from dash import Dash, dcc, html, Input, Output
+from dash import Dash, Input, Output, dcc, html
 
 import data_loader as dl
 
@@ -21,6 +21,7 @@ import data_loader as dl
 # ----------------------------------------------------------------------------
 RUNS = dl.load_runs_df()
 BEST = dl.load_best_efforts_df()
+ADV = dl.advanced_metrics_df()
 
 ACCENT = "#fc4c02"  # Strava orange
 TEMPLATE = "plotly_white"
@@ -233,6 +234,67 @@ def fig_cadence_vs_pace():
     return fig
 
 
+def fig_gap_vs_actual():
+    """Grade-adjusted vs actual pace over time -- hilly runs normalised."""
+    if ADV.empty:
+        return _empty_fig()
+    df = ADV.dropna(subset=["actual_pace_min_km"])
+    if df.empty:
+        return _empty_fig("No pace data")
+    fig = go.Figure()
+    fig.add_scatter(x=df["start"], y=df["actual_pace_min_km"], mode="markers",
+                    name="actual", marker=dict(color="#bbb", size=7))
+    gap = df.dropna(subset=["gap_min_km"])
+    fig.add_scatter(x=gap["start"], y=gap["gap_min_km"], mode="markers",
+                    name="grade-adjusted", marker=dict(color=ACCENT, size=8))
+    xs, ys = _trendline(gap["start"].map(pd.Timestamp.timestamp).to_numpy(),
+                        gap["gap_min_km"].to_numpy())
+    if xs is not None:
+        fig.add_scatter(x=[pd.Timestamp.fromtimestamp(t, "UTC") for t in xs],
+                        y=ys, mode="lines", name="GAP trend",
+                        line=dict(color="#333"))
+    fig.update_yaxes(autorange="reversed", title="pace (min/km, faster ↑)")
+    fig.update_layout(template=TEMPLATE, height=400, xaxis_title="",
+                      title="Grade-adjusted vs actual pace",
+                      legend=dict(orientation="h", y=1.12))
+    return fig
+
+
+def fig_decoupling():
+    """Aerobic decoupling per run over time (lower = better-paced aerobically)."""
+    if ADV.empty or ADV["decoupling_pct"].dropna().empty:
+        return _empty_fig("No HR+pace streams for decoupling")
+    df = ADV.dropna(subset=["decoupling_pct"])
+    colors = ["#2ca02c" if d <= 5 else "#ff7f0e" if d <= 10 else "#d62728"
+              for d in df["decoupling_pct"]]
+    fig = go.Figure(go.Bar(x=df["start"], y=df["decoupling_pct"],
+                           marker_color=colors))
+    fig.add_hline(y=5, line_dash="dot", line_color="#2ca02c",
+                  annotation_text="5% aerobic-durability threshold")
+    fig.update_layout(template=TEMPLATE, height=380, xaxis_title="",
+                      title="Aerobic decoupling (pace:HR drift, 1st→2nd half)",
+                      yaxis_title="decoupling %")
+    return fig
+
+
+def fig_pace_at_hr():
+    """Pace at a fixed HR over time -- a proxy for aerobic fitness gains."""
+    df = ADV.dropna(subset=["pace_at_hr_min_km"]) if not ADV.empty else ADV
+    if df is None or df.empty:
+        return _empty_fig(f"No samples near HR {dl.FITNESS_HR}")
+    fig = px.scatter(df, x="start", y="pace_at_hr_min_km",
+                     color_discrete_sequence=[ACCENT])
+    xs, ys = _trendline(df["start"].map(pd.Timestamp.timestamp).to_numpy(),
+                        df["pace_at_hr_min_km"].to_numpy())
+    if xs is not None:
+        fig.add_scatter(x=[pd.Timestamp.fromtimestamp(t, "UTC") for t in xs],
+                        y=ys, mode="lines", name="trend", line=dict(color="#333"))
+    fig.update_yaxes(autorange="reversed", title="pace (min/km, faster ↑)")
+    fig.update_layout(template=TEMPLATE, height=380, xaxis_title="",
+                      title=f"Pace at HR ≈ {dl.FITNESS_HR} bpm (fitness trend)")
+    return fig
+
+
 # ----------------------------------------------------------------------------
 # Layout
 # ----------------------------------------------------------------------------
@@ -298,6 +360,13 @@ tab_physiology = html.Div([
              className="row"),
 ])
 
+tab_advanced = html.Div([
+    graph(fig_gap_vs_actual()),
+    html.Div([html.Div(graph(fig_decoupling()), className="col"),
+              html.Div(graph(fig_pace_at_hr()), className="col")],
+             className="row"),
+])
+
 # Run-detail tab is populated by a callback so it can read the dropdown.
 run_options = ([{"label": f"{r.date} — {r.name} ({r.distance_km:.1f} km)",
                  "value": r.id}
@@ -318,6 +387,7 @@ app.layout = html.Div([
         dcc.Tab(label="Performance", value="performance"),
         dcc.Tab(label="Geography", value="geography"),
         dcc.Tab(label="Physiology", value="physiology"),
+        dcc.Tab(label="Advanced", value="advanced"),
         dcc.Tab(label="Run detail", value="detail"),
     ]),
     html.Div(id="tab-content", style={"padding": "1rem"}),
@@ -328,6 +398,7 @@ _TABS = {
     "performance": tab_performance,
     "geography": tab_geography,
     "physiology": tab_physiology,
+    "advanced": tab_advanced,
     "detail": tab_detail,
 }
 

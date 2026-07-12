@@ -19,9 +19,15 @@ and you can even mix them:
 
 ## Install
 
+This project uses [uv](https://docs.astral.sh/uv/):
+
 ```
-pip install -r requirements.txt      # add: pip install fitparse  (only if your archive has .fit files)
+uv sync                 # runtime deps into .venv
+uv sync --extra fit     # also install fitparse (only if your archive has .fit files)
 ```
+
+Then run commands with `uv run …` (e.g. `uv run python app.py`), or activate
+`.venv`. Prefer plain pip? `pip install -r requirements.txt` still works.
 
 ---
 
@@ -60,7 +66,31 @@ Restart the app to pick up newly imported/exported runs.
   PR progression
 - **Geography** — GPS density heatmap of everywhere you've run
 - **Physiology** — real time-in-HR-zone (from streams), cadence-vs-pace
+- **Advanced** — grade-adjusted vs actual pace (Minetti cost model), aerobic
+  decoupling (pace:HR drift, 1st→2nd half), and pace at a fixed HR over time
+  (an aerobic-fitness trend)
 - **Run detail** — route colored by pace, elevation profile, per-km splits
+
+---
+
+## Development
+
+```
+uv sync --extra fit            # install runtime + dev tools
+uv run pre-commit install      # enable ruff + mypy git hooks
+
+uv run pytest                  # tests
+uv run ruff check .            # lint
+uv run mypy app.py data_loader.py import_archive.py export_runs.py strava_auth.py make_sample_data.py tests
+```
+
+Ruff + mypy run automatically on every commit via pre-commit, and the same
+three checks run in CI (`.github/workflows/ci.yml`) on every push and PR.
+Config lives in `pyproject.toml`.
+
+Tuning knobs (env vars): `STRAVA_HR_MAX` (HR zones, default 190),
+`STRAVA_FITNESS_HR` (the fixed HR for the fitness trend, default 150),
+`STRAVA_RUNS_DIR` (where the dashboard reads run JSON).
 
 ---
 
@@ -75,19 +105,17 @@ Each `data/runs/<id>.json`:
 - `streams` — per-point series: `time`, `latlng`, `distance`, `altitude`,
   `velocity_smooth`, `heartrate`, `cadence` (only those present in your data)
 
-## Config
-- `STRAVA_HR_MAX` (env var) — sets HR-zone boundaries (default 190).
-
 ## Try it without your data
 ```
-python make_sample_data.py --n 60     # writes synthetic runs to data/runs/
-python app.py
+uv run python make_sample_data.py --n 60   # writes synthetic runs to data/runs/
+uv run python app.py
 ```
 Delete the samples before importing real data: `rm -rf data/runs`
 
 ## Files
 - `import_archive.py` — bulk-archive → JSON (free path)
 - `export_runs.py` / `strava_auth.py` — Strava API → JSON (subscription path)
-- `data_loader.py` — JSON → tidy DataFrames + derived metrics
+- `data_loader.py` — JSON → tidy DataFrames + derived metrics (incl. analytics)
 - `app.py` — the Dash dashboard
 - `make_sample_data.py` — synthetic data for demos/tests
+- `tests/` — pytest unit tests for the analytics + import helpers

@@ -25,9 +25,9 @@ import json
 import math
 import os
 import sys
-import zipfile
 import xml.etree.ElementTree as ET
-from datetime import datetime, timezone
+import zipfile
+from datetime import UTC, datetime
 
 OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "runs")
 
@@ -142,10 +142,10 @@ def parse_tcx(data):
 def parse_fit(data):
     try:
         from fitparse import FitFile
-    except ImportError:
+    except ImportError as err:
         raise RuntimeError(
             "FIT files found but 'fitparse' is not installed. "
-            "Run:  pip install fitparse")
+            "Run:  pip install fitparse") from err
     fit = FitFile(io.BytesIO(data))
     pts = {"lat": [], "lon": [], "ele": [], "t": [], "hr": [], "cad": [],
            "dist": []}
@@ -158,7 +158,7 @@ def parse_fit(data):
         pts["lon"].append(lon * sc if lon is not None else None)
         pts["ele"].append(v.get("enhanced_altitude", v.get("altitude")))
         ts = v.get("timestamp")
-        pts["t"].append(ts.replace(tzinfo=timezone.utc).timestamp() if ts else None)
+        pts["t"].append(ts.replace(tzinfo=UTC).timestamp() if ts else None)
         pts["hr"].append(v.get("heart_rate"))
         pts["cad"].append(v.get("cadence"))
         pts["dist"].append(v.get("distance"))
@@ -207,7 +207,7 @@ def build_activity(pts, meta):
     prev_ll = None
     for i in range(n):
         t = pts["t"][i]
-        time_s.append(int((t - t0)) if t is not None else (time_s[-1] if time_s else 0))
+        time_s.append(int(t - t0) if t is not None else (time_s[-1] if time_s else 0))
         lat, lon = pts["lat"][i], pts["lon"][i]
         if lat is not None and lon is not None:
             latlng.append([round(lat, 6), round(lon, 6)])
@@ -250,11 +250,11 @@ def build_activity(pts, meta):
         streams["cadence"] = {"data": cad}
 
     start_local = meta.get("start_local") or datetime.fromtimestamp(
-        t0, timezone.utc).isoformat()
+        t0, UTC).isoformat()
     summary = {
         "id": meta["id"], "name": meta.get("name") or "Run",
         "type": meta.get("type") or "Run",
-        "start_date": datetime.fromtimestamp(t0, timezone.utc).isoformat(),
+        "start_date": datetime.fromtimestamp(t0, UTC).isoformat(),
         "start_date_local": start_local,
         "distance": distance, "moving_time": moving, "elapsed_time": elapsed,
         "total_elevation_gain": round(ele_gain, 1),

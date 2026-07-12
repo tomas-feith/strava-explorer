@@ -12,7 +12,7 @@ import os
 import sys
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from urllib.parse import urlencode, urlparse, parse_qs
+from urllib.parse import parse_qs, urlencode, urlparse
 
 import requests
 from dotenv import load_dotenv, set_key

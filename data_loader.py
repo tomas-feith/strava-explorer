@@ -18,10 +18,15 @@ from functools import lru_cache
 import numpy as np
 import pandas as pd
 
-RUNS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "runs")
+RUNS_DIR = os.environ.get(
+    "STRAVA_RUNS_DIR",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "runs"),
+)
 
 # Max HR used to derive %-of-max HR zones. Override via STRAVA_HR_MAX env var.
 HR_MAX = int(os.environ.get("STRAVA_HR_MAX", "190"))
+# Reference HR for the "pace at a fixed HR" fitness trend. Override via env.
+FITNESS_HR = int(os.environ.get("STRAVA_FITNESS_HR", "150"))
 # Zone lower bounds as fraction of HR_MAX (Z1..Z5). Standard 5-zone model.
 HR_ZONE_BOUNDS = [0.0, 0.60, 0.70, 0.80, 0.90, 1.01]
 HR_ZONE_NAMES = ["Z1 Recovery", "Z2 Endurance", "Z3 Tempo", "Z4 Threshold", "Z5 VO2max"]
@@ -230,4 +235,145 @@ def run_track(run_id):
             df["pace_min_km"] = np.where(v > 0.1, (1000.0 / v) / 60.0, np.nan)
     else:
         df["pace_min_km"] = np.nan
+    return df
+
+
+# ===========================================================================
+# Advanced analytics (pure functions over numpy arrays -> unit-testable).
+# ===========================================================================
+def minetti_cost_factor(grade):
+    """Metabolic cost of running at `grade` relative to flat ground.
+
+    `grade` is rise/run as a fraction (0.10 == 10% uphill, negative == down).
+    Uses Minetti et al. (2002) energy-cost polynomial, normalised so flat == 1.
+    Returns a multiplier >= ~0.5; running uphill costs more than 1, gentle
+    downhills less, steep downhills more again (braking).
+    """
+    g = np.clip(np.asarray(grade, dtype=float), -0.45, 0.45)
+    c = (155.4 * g**5 - 30.4 * g**4 - 43.3 * g**3
+         + 46.3 * g**2 + 19.5 * g + 3.6)
+    return c / 3.6  # 3.6 J/kg/m is the flat-ground cost
+
+
+def grade_adjusted_pace(distance_m, altitude_m, moving_time_s) -> float:
+    """Grade-adjusted pace (min/km): the flat-equivalent pace for the effort.
+
+    Given per-point cumulative distance, altitude and (optionally) elapsed
+    time, weights each segment by its Minetti cost so that climbing makes the
+    equivalent flat pace *faster* than the raw pace. Returns np.nan if inputs
+    are too sparse.
+    """
+    d = np.asarray(distance_m, dtype=float)
+    a = np.asarray(altitude_m, dtype=float)
+    if d.size < 2 or a.size != d.size:
+        return np.nan
+    dd = np.diff(d)
+    dz = np.diff(a)
+    valid = dd > 0.1
+    if not valid.any():
+        return np.nan
+    grade = np.zeros_like(dd)
+    grade[valid] = dz[valid] / dd[valid]
+    # Equivalent flat distance = actual distance * cost factor.
+    equiv_flat_m = np.sum(dd[valid] * minetti_cost_factor(grade[valid]))
+    total_min = moving_time_s / 60.0
+    if equiv_flat_m <= 0 or total_min <= 0:
+        return np.nan
+    return float(total_min / (equiv_flat_m / 1000.0))
+
+
+def aerobic_decoupling(velocity, heartrate, time=None) -> float:
+    """Aerobic decoupling (%) between the first and second half of a run.
+
+    Efficiency = mean(speed) / mean(HR). Decoupling = how much efficiency
+    fell from the first half to the second (positive = cardiac drift /
+    fatigue; near 0 = well-paced aerobic effort). Splits by time if a time
+    stream is given, else by sample count.
+    """
+    v = np.asarray(velocity, dtype=float)
+    hr = np.asarray(heartrate, dtype=float)
+    n = min(v.size, hr.size)
+    if n < 10:
+        return np.nan
+    v, hr = v[:n], hr[:n]
+    if time is not None and len(time) >= n:
+        t = np.asarray(time[:n], dtype=float)
+        mid = t[0] + (t[-1] - t[0]) / 2.0
+        first = t <= mid
+    else:
+        first = np.arange(n) < n // 2
+    second = ~first
+
+    def eff(mask):
+        vm = np.nanmean(v[mask])
+        hm = np.nanmean(hr[mask])
+        return vm / hm if hm > 0 else np.nan
+
+    e1, e2 = eff(first), eff(second)
+    if not np.isfinite(e1) or not np.isfinite(e2) or e1 == 0:
+        return np.nan
+    return float((e1 - e2) / e1 * 100.0)
+
+
+def pace_at_hr(velocity, heartrate, target_hr, tol=4) -> float:
+    """Median pace (min/km) at a target heart rate +/- tol bpm within a run.
+
+    Isolates the samples where HR sat near `target_hr` and reports the median
+    pace there. Tracking this across runs over time surfaces aerobic fitness:
+    a faster pace at the same HR means you're getting fitter.
+    """
+    v = np.asarray(velocity, dtype=float)
+    hr = np.asarray(heartrate, dtype=float)
+    n = min(v.size, hr.size)
+    if n == 0:
+        return np.nan
+    v, hr = v[:n], hr[:n]
+    mask = (np.abs(hr - target_hr) <= tol) & (v > 0.5)
+    if mask.sum() < 5:
+        return np.nan
+    median_speed = np.nanmedian(v[mask])
+    if median_speed <= 0:
+        return np.nan
+    return float((1000.0 / median_speed) / 60.0)
+
+
+def advanced_metrics_df(target_hr=None):
+    """One row per run with grade-adjusted pace, decoupling and pace-at-HR.
+
+    Computed from each run's streams in a single pass. Rows with insufficient
+    stream data get NaN for the affected metric.
+    """
+    if target_hr is None:
+        target_hr = FITNESS_HR
+    rows = []
+    for doc in _load_all():
+        s = doc.get("summary", {})
+        streams = doc.get("streams") or {}
+        start = pd.to_datetime(s.get("start_date_local") or s.get("start_date"),
+                               errors="coerce")
+        dist = stream_series(streams, "distance")
+        alt = stream_series(streams, "altitude")
+        vel = stream_series(streams, "velocity_smooth")
+        hr = stream_series(streams, "heartrate")
+        t = stream_series(streams, "time")
+        moving_s = s.get("moving_time") or 0
+        dist_m = s.get("distance") or 0.0
+
+        gap = (grade_adjusted_pace(dist, alt, moving_s)
+               if dist and alt else np.nan)
+        decouple = (aerobic_decoupling(vel, hr, t)
+                    if vel and hr else np.nan)
+        at_hr = pace_at_hr(vel, hr, target_hr) if vel and hr else np.nan
+
+        rows.append({
+            "id": s.get("id"),
+            "start": start,
+            "actual_pace_min_km": _pace_min_per_km(dist_m, moving_s),
+            "gap_min_km": gap,
+            "decoupling_pct": decouple,
+            "pace_at_hr_min_km": at_hr,
+        })
+    df = pd.DataFrame(rows)
+    if not df.empty:
+        df = df.sort_values("start").reset_index(drop=True)
     return df
