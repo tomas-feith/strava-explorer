@@ -2,11 +2,14 @@
 
 Run:
     python app.py
-then open http://127.0.0.1:8050 in your browser.
+then open the URL it prints (http://127.0.0.1:8050, or the next free port if
+8050 is already taken).
 
 Reads data/runs/*.json (see export_runs.py). All figures degrade gracefully
 when a metric is missing (e.g. no HR stream) so partial data still renders.
 """
+
+import os
 
 import numpy as np
 import pandas as pd
@@ -15,6 +18,7 @@ import plotly.graph_objects as go
 from dash import Dash, Input, Output, dcc, html
 
 import data_loader as dl
+from freeport import find_free_port
 
 # ----------------------------------------------------------------------------
 # Load once at startup. Restart the app to pick up newly exported runs.
@@ -467,4 +471,8 @@ app.index_string = """<!DOCTYPE html>
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=8050)
+    # 8050 is Dash's default and may be taken by another local dashboard. Stash
+    # the choice in the environment so the debug reloader's child process
+    # inherits the same port instead of picking a second one.
+    port = os.environ.setdefault("STRAVA_EXPLORER_PORT", str(find_free_port()))
+    app.run(debug=True, port=int(port))
