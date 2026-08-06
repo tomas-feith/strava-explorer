@@ -22,11 +22,12 @@ fit = ["fitparse>=1.2"]
 [dependency-groups]
 dev = [
     "pytest>=8.0",
-    "mypy>=1.10",
-    "ruff>=0.5",
+    "mypy>=2.3",
+    "ruff>=0.16",
     "pre-commit>=3.7",
     "pandas-stubs>=2.2",
     "types-requests>=2.31",
+    "pytest-cov>=7.1.0",
 ]
 
 [tool.uv]
@@ -56,3 +57,22 @@ check_untyped_defs = false
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]   # make the flat top-level modules importable from tests/
+addopts = "--cov --cov-report=term-missing"
+# For a targeted run that would trip the floor: uv run pytest -k foo --no-cov
+
+[tool.coverage.run]
+source = ["."]
+omit = ["tests/*"]
+
+[tool.coverage.report]
+# A ratchet, not an aspiration: currently ~35% (source only -- counting the
+# test files themselves inflated this to 46%). Only catches regressions; raise
+# it as tests land. app.py (the Dash UI), export_runs.py and strava_auth.py are
+# entirely untested today.
+fail_under = 33
+show_missing = true
+exclude_also = [
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]
