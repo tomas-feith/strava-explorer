@@ -49,8 +49,10 @@ def main():
     client_id = os.environ.get("STRAVA_CLIENT_ID")
     client_secret = os.environ.get("STRAVA_CLIENT_SECRET")
     if not client_id or not client_secret:
-        sys.exit("Set STRAVA_CLIENT_ID and STRAVA_CLIENT_SECRET in .env first "
-                 "(copy .env.example to .env).")
+        sys.exit(
+            "Set STRAVA_CLIENT_ID and STRAVA_CLIENT_SECRET in .env first "
+            "(copy .env.example to .env)."
+        )
 
     params = {
         "client_id": client_id,

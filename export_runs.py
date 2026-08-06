@@ -30,8 +30,17 @@ OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "runs
 
 # Stream types worth pulling for a run. Strava returns only those that exist.
 STREAM_KEYS = [
-    "time", "latlng", "distance", "altitude", "velocity_smooth",
-    "heartrate", "cadence", "watts", "temp", "moving", "grade_smooth",
+    "time",
+    "latlng",
+    "distance",
+    "altitude",
+    "velocity_smooth",
+    "heartrate",
+    "cadence",
+    "watts",
+    "temp",
+    "moving",
+    "grade_smooth",
 ]
 
 
@@ -56,16 +65,17 @@ class RateLimiter:
         short_used, daily_used = (int(x) for x in usage.split(","))
 
         if daily_used >= daily_limit - self.daily_margin:
-            sys.exit(f"\nDaily rate limit nearly reached ({daily_used}/{daily_limit}). "
-                     "Re-run tomorrow -- the export will resume where it left off.")
+            sys.exit(
+                f"\nDaily rate limit nearly reached ({daily_used}/{daily_limit}). "
+                "Re-run tomorrow -- the export will resume where it left off."
+            )
 
         if short_used >= short_limit - self.short_margin:
             # Sleep to the next 15-minute boundary of the clock.
             now = time.time()
             wait = 15 * 60 - (int(now) % (15 * 60)) + 5
             mins = wait / 60
-            print(f"  15-min limit near ({short_used}/{short_limit}); "
-                  f"sleeping {mins:.1f} min...")
+            print(f"  15-min limit near ({short_used}/{short_limit}); sleeping {mins:.1f} min...")
             time.sleep(wait)
 
 
@@ -111,8 +121,9 @@ def list_activities(token, limiter, activity_type):
     """Yield summary activity dicts, newest first, across all pages."""
     page = 1
     while True:
-        batch = api_get("/athlete/activities", token, limiter,
-                        params={"per_page": 200, "page": page})
+        batch = api_get(
+            "/athlete/activities", token, limiter, params={"per_page": 200, "page": page}
+        )
         if not batch:
             return
         for act in batch:
@@ -127,29 +138,36 @@ def export_one(act, token, limiter, want_streams):
     if os.path.exists(out_path):
         return False  # already done -> resumable skip
 
-    detail = api_get(f"/activities/{act_id}", token, limiter,
-                     params={"include_all_efforts": "true"})
+    detail = api_get(
+        f"/activities/{act_id}", token, limiter, params={"include_all_efforts": "true"}
+    )
 
     streams = {}
     if want_streams:
         streams = api_get(
-            f"/activities/{act_id}/streams", token, limiter,
+            f"/activities/{act_id}/streams",
+            token,
+            limiter,
             params={"keys": ",".join(STREAM_KEYS), "key_by_type": "true"},
         )
 
     with open(out_path, "w", encoding="utf-8") as f:
-        json.dump({"summary": act, "detail": detail, "streams": streams},
-                  f, ensure_ascii=False, indent=2)
+        json.dump(
+            {"summary": act, "detail": detail, "streams": streams}, f, ensure_ascii=False, indent=2
+        )
     return True
 
 
 def main():
     parser = argparse.ArgumentParser(description="Export Strava activities to JSON.")
-    parser.add_argument("--type", default="Run",
-                        help='Activity type to export (e.g. Run, Ride) or "all". '
-                             'Default: Run')
-    parser.add_argument("--no-streams", action="store_true",
-                        help="Skip per-second GPS/HR/etc. streams.")
+    parser.add_argument(
+        "--type",
+        default="Run",
+        help='Activity type to export (e.g. Run, Ride) or "all". Default: Run',
+    )
+    parser.add_argument(
+        "--no-streams", action="store_true", help="Skip per-second GPS/HR/etc. streams."
+    )
     args = parser.parse_args()
 
     os.makedirs(OUT_DIR, exist_ok=True)
@@ -170,8 +188,7 @@ def main():
         else:
             skipped += 1
 
-    print(f"\nDone. {exported} exported, {skipped} already present. "
-          f"Files in {OUT_DIR}")
+    print(f"\nDone. {exported} exported, {skipped} already present. Files in {OUT_DIR}")
 
 
 if __name__ == "__main__":

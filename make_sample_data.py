@@ -38,55 +38,75 @@ def make_track(n_points, base_speed):
 
 
 def make_run(run_id, start):
-    n = random.randint(1500, 4500)          # ~seconds ≈ points
-    base_speed = random.uniform(2.6, 3.6)   # m/s
+    n = random.randint(1500, 4500)  # ~seconds ≈ points
+    base_speed = random.uniform(2.6, 3.6)  # m/s
     latlng, dist, alt, hr, vel, cad, tstream = make_track(n, base_speed)
     distance = dist[-1]
     moving = n
     avg_speed = distance / moving
     summary = {
-        "id": run_id, "name": random.choice(
-            ["Morning Run", "Lunch Run", "Evening Run", "Long Run", "Tempo"]),
+        "id": run_id,
+        "name": random.choice(["Morning Run", "Lunch Run", "Evening Run", "Long Run", "Tempo"]),
         "type": "Run",
         "start_date": start.isoformat() + "Z",
         "start_date_local": start.isoformat(),
-        "distance": distance, "moving_time": moving,
+        "distance": distance,
+        "moving_time": moving,
         "elapsed_time": moving + random.randint(0, 300),
-        "total_elevation_gain": round(sum(
-            max(0, alt[i] - alt[i - 1]) for i in range(1, len(alt))), 1),
-        "average_speed": avg_speed, "max_speed": max(vel),
-        "average_heartrate": sum(hr) / len(hr), "max_heartrate": max(hr),
+        "total_elevation_gain": round(
+            sum(max(0, alt[i] - alt[i - 1]) for i in range(1, len(alt))), 1
+        ),
+        "average_speed": avg_speed,
+        "max_speed": max(vel),
+        "average_heartrate": sum(hr) / len(hr),
+        "max_heartrate": max(hr),
         "average_cadence": sum(cad) / len(cad) / 2,  # Strava reports one-leg
         "kudos_count": random.randint(0, 30),
         "start_latlng": latlng[0],
     }
     # Best efforts for common distances the run is long enough to contain.
     best = []
-    for name, dm in [("400m", 400), ("1k", 1000), ("1 mile", 1609),
-                     ("5k", 5000), ("10k", 10000)]:
+    for name, dm in [("400m", 400), ("1k", 1000), ("1 mile", 1609), ("5k", 5000), ("10k", 10000)]:
         if distance >= dm:
             pace = 1 / avg_speed * random.uniform(0.92, 1.05)
-            best.append({"name": name, "distance": dm,
-                         "elapsed_time": int(dm * pace),
-                         "start_date_local": start.isoformat()})
+            best.append(
+                {
+                    "name": name,
+                    "distance": dm,
+                    "elapsed_time": int(dm * pace),
+                    "start_date_local": start.isoformat(),
+                }
+            )
     # Per-km splits.
     splits = []
     km = int(distance // 1000)
     for k in range(1, km + 1):
         st = avg_speed * random.uniform(0.9, 1.1)
-        splits.append({"split": k, "distance": 1000.0,
-                       "moving_time": int(1000 / st),
-                       "elapsed_time": int(1000 / st),
-                       "average_speed": st,
-                       "elevation_difference": round(random.uniform(-8, 8), 1),
-                       "average_heartrate": 150 + random.uniform(-10, 10)})
-    detail = {"id": run_id, "best_efforts": best, "splits_metric": splits,
-              "gear": {"name": random.choice(["Pegasus 40", "Endorphin Speed"])},
-              "description": ""}
+        splits.append(
+            {
+                "split": k,
+                "distance": 1000.0,
+                "moving_time": int(1000 / st),
+                "elapsed_time": int(1000 / st),
+                "average_speed": st,
+                "elevation_difference": round(random.uniform(-8, 8), 1),
+                "average_heartrate": 150 + random.uniform(-10, 10),
+            }
+        )
+    detail = {
+        "id": run_id,
+        "best_efforts": best,
+        "splits_metric": splits,
+        "gear": {"name": random.choice(["Pegasus 40", "Endorphin Speed"])},
+        "description": "",
+    }
     streams = {
-        "time": {"data": tstream}, "latlng": {"data": latlng},
-        "distance": {"data": dist}, "altitude": {"data": alt},
-        "heartrate": {"data": hr}, "velocity_smooth": {"data": vel},
+        "time": {"data": tstream},
+        "latlng": {"data": latlng},
+        "distance": {"data": dist},
+        "altitude": {"data": alt},
+        "heartrate": {"data": hr},
+        "velocity_smooth": {"data": vel},
         "cadence": {"data": cad},
     }
     return {"summary": summary, "detail": detail, "streams": streams}
@@ -102,8 +122,7 @@ def main():
         day += timedelta(days=random.choice([1, 2, 2, 3, 4]))
         run_id = 9_000_000 + i
         with open(os.path.join(OUT, f"{run_id}.json"), "w", encoding="utf-8") as f:
-            json.dump(make_run(run_id, day + timedelta(
-                hours=random.randint(-2, 11))), f)
+            json.dump(make_run(run_id, day + timedelta(hours=random.randint(-2, 11))), f)
     print(f"Wrote {args.n} sample runs to {OUT}")
 
 

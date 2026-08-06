@@ -81,8 +81,10 @@ def test_advanced_metrics_df_from_synthetic_docs(monkeypatch):
     n = 120
     doc = {
         "summary": {
-            "id": 7, "start_date_local": "2025-05-01T07:00:00",
-            "distance": 600.0, "moving_time": 200,
+            "id": 7,
+            "start_date_local": "2025-05-01T07:00:00",
+            "distance": 600.0,
+            "moving_time": 200,
         },
         "streams": {
             "time": {"data": list(range(n))},

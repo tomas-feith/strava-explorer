@@ -63,29 +63,30 @@ def load_runs_df():
         d = doc.get("detail", {})
         dist_m = s.get("distance") or 0.0
         moving_s = s.get("moving_time") or 0.0
-        start = pd.to_datetime(s.get("start_date_local") or s.get("start_date"),
-                               errors="coerce")
+        start = pd.to_datetime(s.get("start_date_local") or s.get("start_date"), errors="coerce")
         latlng = s.get("start_latlng") or [None, None]
-        rows.append({
-            "id": s.get("id"),
-            "name": s.get("name"),
-            "start": start,
-            "date": start.date() if pd.notna(start) else None,
-            "type": s.get("type"),
-            "distance_km": dist_m / 1000.0,
-            "moving_min": moving_s / 60.0,
-            "elapsed_min": (s.get("elapsed_time") or 0) / 60.0,
-            "pace_min_km": _pace_min_per_km(dist_m, moving_s),
-            "avg_speed_kmh": (s.get("average_speed") or 0) * 3.6,
-            "elev_gain_m": s.get("total_elevation_gain"),
-            "avg_hr": s.get("average_heartrate"),
-            "max_hr": s.get("max_heartrate"),
-            "avg_cadence": (s.get("average_cadence") or np.nan) * 2,  # spm (both feet)
-            "kudos": s.get("kudos_count"),
-            "gear": (d.get("gear") or {}).get("name"),
-            "start_lat": latlng[0],
-            "start_lng": latlng[1],
-        })
+        rows.append(
+            {
+                "id": s.get("id"),
+                "name": s.get("name"),
+                "start": start,
+                "date": start.date() if pd.notna(start) else None,
+                "type": s.get("type"),
+                "distance_km": dist_m / 1000.0,
+                "moving_min": moving_s / 60.0,
+                "elapsed_min": (s.get("elapsed_time") or 0) / 60.0,
+                "pace_min_km": _pace_min_per_km(dist_m, moving_s),
+                "avg_speed_kmh": (s.get("average_speed") or 0) * 3.6,
+                "elev_gain_m": s.get("total_elevation_gain"),
+                "avg_hr": s.get("average_heartrate"),
+                "max_hr": s.get("max_heartrate"),
+                "avg_cadence": (s.get("average_cadence") or np.nan) * 2,  # spm (both feet)
+                "kudos": s.get("kudos_count"),
+                "gear": (d.get("gear") or {}).get("name"),
+                "start_lat": latlng[0],
+                "start_lng": latlng[1],
+            }
+        )
     df = pd.DataFrame(rows)
     if df.empty:
         return df
@@ -107,21 +108,22 @@ def load_best_efforts_df():
     rows = []
     for doc in _load_all():
         s = doc.get("summary", {})
-        start = pd.to_datetime(s.get("start_date_local") or s.get("start_date"),
-                               errors="coerce")
-        for be in (doc.get("detail", {}).get("best_efforts") or []):
+        start = pd.to_datetime(s.get("start_date_local") or s.get("start_date"), errors="coerce")
+        for be in doc.get("detail", {}).get("best_efforts") or []:
             elapsed = be.get("elapsed_time")
             dist = be.get("distance")
             if not elapsed or not dist:
                 continue
-            rows.append({
-                "run_id": s.get("id"),
-                "start": start,
-                "effort": be.get("name"),
-                "distance_m": dist,
-                "elapsed_s": elapsed,
-                "pace_min_km": _pace_min_per_km(dist, elapsed),
-            })
+            rows.append(
+                {
+                    "run_id": s.get("id"),
+                    "start": start,
+                    "effort": be.get("name"),
+                    "distance_m": dist,
+                    "elapsed_s": elapsed,
+                    "pace_min_km": _pace_min_per_km(dist, elapsed),
+                }
+            )
     return pd.DataFrame(rows)
 
 
@@ -130,16 +132,18 @@ def load_splits_df(run_id):
     for doc in _load_all():
         if doc.get("summary", {}).get("id") == run_id:
             rows = []
-            for sp in (doc.get("detail", {}).get("splits_metric") or []):
+            for sp in doc.get("detail", {}).get("splits_metric") or []:
                 dist = sp.get("distance")
                 moving = sp.get("moving_time")
-                rows.append({
-                    "split": sp.get("split"),
-                    "distance_km": (dist or 0) / 1000.0,
-                    "pace_min_km": _pace_min_per_km(dist, moving),
-                    "elev_diff_m": sp.get("elevation_difference"),
-                    "avg_hr": sp.get("average_heartrate"),
-                })
+                rows.append(
+                    {
+                        "split": sp.get("split"),
+                        "distance_km": (dist or 0) / 1000.0,
+                        "pace_min_km": _pace_min_per_km(dist, moving),
+                        "elev_diff_m": sp.get("elevation_difference"),
+                        "avg_hr": sp.get("average_heartrate"),
+                    }
+                )
             return pd.DataFrame(rows)
     return pd.DataFrame()
 
@@ -184,10 +188,12 @@ def hr_zone_distribution():
         idx = np.clip(np.digitize(hr, bounds[1:-1]), 0, len(HR_ZONE_NAMES) - 1)
         for z in range(len(HR_ZONE_NAMES)):
             seconds[z] += dt[idx == z].sum()
-    return pd.DataFrame({
-        "zone": HR_ZONE_NAMES,
-        "minutes": seconds / 60.0,
-    })
+    return pd.DataFrame(
+        {
+            "zone": HR_ZONE_NAMES,
+            "minutes": seconds / 60.0,
+        }
+    )
 
 
 def heatmap_points(max_points=40000, stride=3):
@@ -226,16 +232,18 @@ def run_track(run_id):
     v = np.asarray(vel, dtype=float)
     with np.errstate(divide="ignore", invalid="ignore"):
         pace = np.where(v > 0.1, (1000.0 / v) / 60.0, np.nan)
-    df = pd.DataFrame({
-        # latlng is aligned 1:1 with the other streams; gaps (no GPS fix)
-        # are None and get dropped below.
-        "lat": [p[0] if p else np.nan for p in latlng],
-        "lon": [p[1] if p else np.nan for p in latlng],
-        "distance_km": np.asarray(dist, dtype=float) / 1000.0,
-        "altitude_m": np.asarray(alt, dtype=float),
-        "hr": np.asarray(hr, dtype=float),
-        "pace_min_km": pace,
-    })
+    df = pd.DataFrame(
+        {
+            # latlng is aligned 1:1 with the other streams; gaps (no GPS fix)
+            # are None and get dropped below.
+            "lat": [p[0] if p else np.nan for p in latlng],
+            "lon": [p[1] if p else np.nan for p in latlng],
+            "distance_km": np.asarray(dist, dtype=float) / 1000.0,
+            "altitude_m": np.asarray(alt, dtype=float),
+            "hr": np.asarray(hr, dtype=float),
+            "pace_min_km": pace,
+        }
+    )
     return df.dropna(subset=["lat", "lon"]).reset_index(drop=True)
 
 
@@ -251,8 +259,7 @@ def minetti_cost_factor(grade):
     downhills less, steep downhills more again (braking).
     """
     g = np.clip(np.asarray(grade, dtype=float), -0.45, 0.45)
-    c = (155.4 * g**5 - 30.4 * g**4 - 43.3 * g**3
-         + 46.3 * g**2 + 19.5 * g + 3.6)
+    c = 155.4 * g**5 - 30.4 * g**4 - 43.3 * g**3 + 46.3 * g**2 + 19.5 * g + 3.6
     return c / 3.6  # 3.6 J/kg/m is the flat-ground cost
 
 
@@ -350,8 +357,7 @@ def advanced_metrics_df(target_hr=None):
     for doc in _load_all():
         s = doc.get("summary", {})
         streams = doc.get("streams") or {}
-        start = pd.to_datetime(s.get("start_date_local") or s.get("start_date"),
-                               errors="coerce")
+        start = pd.to_datetime(s.get("start_date_local") or s.get("start_date"), errors="coerce")
         dist = stream_series(streams, "distance")
         alt = stream_series(streams, "altitude")
         vel = stream_series(streams, "velocity_smooth")
@@ -360,20 +366,20 @@ def advanced_metrics_df(target_hr=None):
         moving_s = s.get("moving_time") or 0
         dist_m = s.get("distance") or 0.0
 
-        gap = (grade_adjusted_pace(dist, alt, moving_s)
-               if dist and alt else np.nan)
-        decouple = (aerobic_decoupling(vel, hr, t)
-                    if vel and hr else np.nan)
+        gap = grade_adjusted_pace(dist, alt, moving_s) if dist and alt else np.nan
+        decouple = aerobic_decoupling(vel, hr, t) if vel and hr else np.nan
         at_hr = pace_at_hr(vel, hr, target_hr) if vel and hr else np.nan
 
-        rows.append({
-            "id": s.get("id"),
-            "start": start,
-            "actual_pace_min_km": _pace_min_per_km(dist_m, moving_s),
-            "gap_min_km": gap,
-            "decoupling_pct": decouple,
-            "pace_at_hr_min_km": at_hr,
-        })
+        rows.append(
+            {
+                "id": s.get("id"),
+                "start": start,
+                "actual_pace_min_km": _pace_min_per_km(dist_m, moving_s),
+                "gap_min_km": gap,
+                "decoupling_pct": decouple,
+                "pace_at_hr_min_km": at_hr,
+            }
+        )
     df = pd.DataFrame(rows)
     if not df.empty:
         df = df.sort_values("start").reset_index(drop=True)

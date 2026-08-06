@@ -1,6 +1,5 @@
 """Unit tests for import_archive parsing and derived-metric helpers."""
 
-
 import pytest
 
 import import_archive as ia
@@ -64,8 +63,8 @@ def test_best_efforts_constant_speed():
 
 
 def test_splits_constant_speed():
-    dist = [i * 10 for i in range(201)]     # 0..2000 m
-    t = [i * 3 for i in range(201)]         # 3 s per 10 m
+    dist = [i * 10 for i in range(201)]  # 0..2000 m
+    t = [i * 3 for i in range(201)]  # 3 s per 10 m
     hr = [150] * 201
     alt = [20.0 + (i * 10) / 1000.0 for i in range(201)]  # +1 m per km
     splits = ia._splits(dist, t, hr, alt)
@@ -91,8 +90,7 @@ def test_build_activity_end_to_end():
 
 
 def test_build_activity_rejects_single_point():
-    pts = {"lat": [1.0], "lon": [2.0], "ele": [10.0], "t": [1000.0],
-           "hr": [150], "cad": [80]}
+    pts = {"lat": [1.0], "lon": [2.0], "ele": [10.0], "t": [1000.0], "hr": [150], "cad": [80]}
     assert ia.build_activity(pts, {"id": 1}) is None
 
 
@@ -101,7 +99,7 @@ def test_moving_time_uses_elapsed_span_not_point_count():
     # the ~295 s actually elapsed, not the 60 sample points. The old code
     # counted points as seconds, so multi-second sampling inflated pace ~5x
     # (e.g. producing impossible sub-1:00/km paces).
-    n, step_s, speed = 60, 5, 3.0            # 15 m per 5 s sample
+    n, step_s, speed = 60, 5, 3.0  # 15 m per 5 s sample
     pts = {
         "lat": [38.72 + i * 1e-4 for i in range(n)],
         "lon": [-9.14] * n,
@@ -112,11 +110,11 @@ def test_moving_time_uses_elapsed_span_not_point_count():
         "dist": [i * step_s * speed for i in range(n)],
     }
     s = ia.build_activity(pts, {"id": 7, "name": "Steady", "type": "Run"})["summary"]
-    elapsed = (n - 1) * step_s               # 295 s
+    elapsed = (n - 1) * step_s  # 295 s
     assert s["elapsed_time"] == elapsed
     # Moving time is the real span (all samples moving), not the point count.
     assert s["moving_time"] == pytest.approx(elapsed, abs=step_s)
-    assert s["moving_time"] > n              # guards against the point-count bug
+    assert s["moving_time"] > n  # guards against the point-count bug
     # Derived speed equals the real 3 m/s, not the ~15 m/s the bug produced.
     assert s["average_speed"] == pytest.approx(speed, rel=0.05)
 
@@ -136,7 +134,8 @@ def test_parse_tcx_tolerates_leading_whitespace():
         "<LatitudeDegrees>38.7201</LatitudeDegrees>"
         "<LongitudeDegrees>-9.14</LongitudeDegrees></Position>"
         "<DistanceMeters>10</DistanceMeters></Trackpoint>"
-        "</Track></Lap></Activity></Activities></TrainingCenterDatabase>")
+        "</Track></Lap></Activity></Activities></TrainingCenterDatabase>"
+    )
     pts = ia.parse_tcx(tcx.encode())
     assert pts["lat"] == [38.72, 38.7201]
     assert pts["dist"] == [0.0, 10.0]
@@ -155,7 +154,8 @@ def test_parse_gpx_tolerates_missing_latlng():
         "<trkpt><time>2025-03-01T07:30:01Z</time><extensions>"
         "<gpxtpx:TrackPointExtension><gpxtpx:hr>142</gpxtpx:hr>"
         "</gpxtpx:TrackPointExtension></extensions></trkpt>"
-        "</trkseg></trk></gpx>")
+        "</trkseg></trk></gpx>"
+    )
     pts = ia.parse_gpx(gpx.encode())
     assert pts["lat"] == [None, None]
     assert pts["lon"] == [None, None]

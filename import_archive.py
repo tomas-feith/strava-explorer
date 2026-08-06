@@ -33,9 +33,13 @@ OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "runs
 
 # Standard distances (metres) for computed best-efforts, matching the API names.
 BEST_EFFORT_DISTANCES = [
-    ("400m", 400), ("1k", 1000), ("1 mile", 1609),
-    ("5k", 5000), ("10k", 10000),
-    ("Half-Marathon", 21097), ("Marathon", 42195),
+    ("400m", 400),
+    ("1k", 1000),
+    ("1 mile", 1609),
+    ("5k", 5000),
+    ("10k", 10000),
+    ("Half-Marathon", 21097),
+    ("Marathon", 42195),
 ]
 
 
@@ -102,8 +106,10 @@ def _lstrip_xml(data):
 
 def parse_gpx(data):
     root = ET.fromstring(_lstrip_xml(data))
-    ns = {"g": "http://www.topografix.com/GPX/1/1",
-          "tpx": "http://www.garmin.com/xmlschemas/TrackPointExtension/v1"}
+    ns = {
+        "g": "http://www.topografix.com/GPX/1/1",
+        "tpx": "http://www.garmin.com/xmlschemas/TrackPointExtension/v1",
+    }
     pts = {"lat": [], "lon": [], "ele": [], "t": [], "hr": [], "cad": []}
     for trkpt in root.iter("{http://www.topografix.com/GPX/1/1}trkpt"):
         # HR-only devices (e.g. wrist bands on a treadmill) emit trkpts with
@@ -126,8 +132,7 @@ def parse_tcx(data):
     root = ET.fromstring(_lstrip_xml(data))
     tc = "{http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2}"
     ax = "{http://www.garmin.com/xmlschemas/ActivityExtension/v2}"
-    pts = {"lat": [], "lon": [], "ele": [], "t": [], "hr": [], "cad": [],
-           "dist": []}
+    pts = {"lat": [], "lon": [], "ele": [], "t": [], "hr": [], "cad": [], "dist": []}
     for tp in root.iter(tc + "Trackpoint"):
         pos = tp.find(tc + "Position")
         if pos is not None:
@@ -156,12 +161,11 @@ def parse_fit(data):
         from fitparse import FitFile
     except ImportError as err:
         raise RuntimeError(
-            "FIT files found but 'fitparse' is not installed. "
-            "Run:  pip install fitparse") from err
+            "FIT files found but 'fitparse' is not installed. Run:  pip install fitparse"
+        ) from err
     fit = FitFile(io.BytesIO(data))
-    pts = {"lat": [], "lon": [], "ele": [], "t": [], "hr": [], "cad": [],
-           "dist": []}
-    sc = 180.0 / 2 ** 31  # semicircles -> degrees
+    pts = {"lat": [], "lon": [], "ele": [], "t": [], "hr": [], "cad": [], "dist": []}
+    sc = 180.0 / 2**31  # semicircles -> degrees
     for rec in fit.get_messages("record"):
         v = {d.name: d.value for d in rec}
         lat = v.get("position_lat")
@@ -250,16 +254,21 @@ def build_activity(pts, meta):
     # Sum the actual time span of moving samples, not the point count. Many
     # devices record every few seconds, so counting points underestimates
     # moving time (and inflates pace) by the sampling interval.
-    moving = sum(time_s[i] - time_s[i - 1]
-                 for i in range(1, n) if vel[i] > 0.5)
+    moving = sum(time_s[i] - time_s[i - 1] for i in range(1, n) if vel[i] > 0.5)
     distance = dist_cum[-1]
     hr_vals = [h for h in hr if h]
     cad_vals = [c for c in cad if c]
-    ele_gain = sum(max(0, (alt[i] or 0) - (alt[i - 1] or 0))
-                   for i in range(1, n) if alt[i] is not None and alt[i - 1] is not None)
+    ele_gain = sum(
+        max(0, (alt[i] or 0) - (alt[i - 1] or 0))
+        for i in range(1, n)
+        if alt[i] is not None and alt[i - 1] is not None
+    )
 
-    streams = {"time": {"data": time_s}, "distance": {"data": dist_cum},
-               "velocity_smooth": {"data": [round(v, 2) for v in vel]}}
+    streams = {
+        "time": {"data": time_s},
+        "distance": {"data": dist_cum},
+        "velocity_smooth": {"data": [round(v, 2) for v in vel]},
+    }
     if have_gps:
         streams["latlng"] = {"data": latlng}
     if any(a is not None for a in alt):
@@ -269,14 +278,16 @@ def build_activity(pts, meta):
     if cad_vals:
         streams["cadence"] = {"data": cad}
 
-    start_local = meta.get("start_local") or datetime.fromtimestamp(
-        t0, UTC).isoformat()
+    start_local = meta.get("start_local") or datetime.fromtimestamp(t0, UTC).isoformat()
     summary = {
-        "id": meta["id"], "name": meta.get("name") or "Run",
+        "id": meta["id"],
+        "name": meta.get("name") or "Run",
         "type": meta.get("type") or "Run",
         "start_date": datetime.fromtimestamp(t0, UTC).isoformat(),
         "start_date_local": start_local,
-        "distance": distance, "moving_time": moving, "elapsed_time": elapsed,
+        "distance": distance,
+        "moving_time": moving,
+        "elapsed_time": elapsed,
         "total_elevation_gain": round(ele_gain, 1),
         "average_speed": distance / moving if moving else 0.0,
         "max_speed": max(vel) if vel else 0.0,
@@ -329,20 +340,24 @@ def _splits(dist_cum, time_s, hr, alt):
         t_end = _interp_time(dist_cum, time_s, k * 1000)
         if t_end is None:
             break
-        seg_hr = [hr[i] for i in range(len(hr))
-                  if hr[i] and (k - 1) * 1000 <= dist_cum[i] < k * 1000]
+        seg_hr = [
+            hr[i] for i in range(len(hr)) if hr[i] and (k - 1) * 1000 <= dist_cum[i] < k * 1000
+        ]
         a_start = _val_at(dist_cum, alt, (k - 1) * 1000)
         a_end = _val_at(dist_cum, alt, k * 1000)
-        splits.append({
-            "split": k, "distance": 1000.0,
-            "moving_time": int(t_end - t_start),
-            "elapsed_time": int(t_end - t_start),
-            "average_speed": 1000.0 / (t_end - t_start) if t_end > t_start else 0,
-            "elevation_difference": (round(a_end - a_start, 1)
-                                     if a_start is not None and a_end is not None
-                                     else None),
-            "average_heartrate": sum(seg_hr) / len(seg_hr) if seg_hr else None,
-        })
+        splits.append(
+            {
+                "split": k,
+                "distance": 1000.0,
+                "moving_time": int(t_end - t_start),
+                "elapsed_time": int(t_end - t_start),
+                "average_speed": 1000.0 / (t_end - t_start) if t_end > t_start else 0,
+                "elevation_difference": (
+                    round(a_end - a_start, 1) if a_start is not None and a_end is not None else None
+                ),
+                "average_heartrate": sum(seg_hr) / len(seg_hr) if seg_hr else None,
+            }
+        )
         k += 1
     return splits
 
@@ -372,9 +387,14 @@ def _best_efforts(dist_cum, time_s, start_local):
                 if dt > 0 and (best is None or dt < best):
                     best = dt
         if best is not None:
-            efforts.append({"name": name, "distance": dm,
-                            "elapsed_time": int(best),
-                            "start_date_local": start_local})
+            efforts.append(
+                {
+                    "name": name,
+                    "distance": dm,
+                    "elapsed_time": int(best),
+                    "start_date_local": start_local,
+                }
+            )
     return efforts
 
 
@@ -392,8 +412,7 @@ def _pick(row, *names):
 def _parse_csv_date(s):
     if not s:
         return None
-    for fmt in ("%b %d, %Y, %I:%M:%S %p", "%Y-%m-%d %H:%M:%S",
-                "%b %d, %Y, %I:%M:%S %p UTC"):
+    for fmt in ("%b %d, %Y, %I:%M:%S %p", "%Y-%m-%d %H:%M:%S", "%b %d, %Y, %I:%M:%S %p UTC"):
         try:
             return datetime.strptime(s.strip(), fmt).isoformat()
         except ValueError:
@@ -404,8 +423,7 @@ def _parse_csv_date(s):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("archive", help="Path to the export .zip or extracted folder")
-    ap.add_argument("--type", default="Run",
-                    help='Activity type to import, or "all". Default: Run')
+    ap.add_argument("--type", default="Run", help='Activity type to import, or "all". Default: Run')
     args = ap.parse_args()
 
     arc = Archive(args.archive)
@@ -464,9 +482,11 @@ def main():
             errors += 1
             print(f"  ! failed {act_id} ({filename}): {e}")
 
-    print(f"\nDone. {imported} runs in {OUT_DIR} | "
-          f"{skipped} non-matching type | {no_track} without a usable track | "
-          f"{errors} parse errors")
+    print(
+        f"\nDone. {imported} runs in {OUT_DIR} | "
+        f"{skipped} non-matching type | {no_track} without a usable track | "
+        f"{errors} parse errors"
+    )
     print("Now run:  python app.py")
 
 
