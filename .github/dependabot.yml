@@ -20,10 +20,22 @@ updates:
       interval: weekly
     commit-message:
       prefix: deps
+    open-pull-requests-limit: 5
     groups:
-      # Dev tooling batched; runtime deps stay individual so a dash or pandas
-      # bump gets reviewed on its own.
+      # Dev tooling batched: a bad ruff or mypy bump is a lint diff, not a
+      # behaviour change.
       dev-tools:
         dependency-type: development
+        patterns:
+          - "*"
+      # Runtime PATCH bumps batched as well. They are the high-volume, low-risk
+      # majority, and one PR per patch is most of the review toil for almost
+      # none of the risk. Minor and major runtime bumps deliberately stay
+      # individual, so a dash or pandas change that can move behaviour still
+      # gets looked at on its own.
+      runtime-patch:
+        dependency-type: production
+        update-types:
+          - patch
         patterns:
           - "*"
