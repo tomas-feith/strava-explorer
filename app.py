@@ -23,12 +23,29 @@ from freeport import find_free_port
 
 # ----------------------------------------------------------------------------
 # Load once at startup. Restart the app to pick up newly exported runs.
+#
+# A load failure must not stop the server coming up. data_loader already skips
+# files that are unreadable or not JSON, so what lands here is a doc that parsed
+# but is not shaped the way we expect -- and the useful response to that is a
+# running page that says so, not a stack trace in the terminal and no dashboard.
 # ----------------------------------------------------------------------------
-RUNS = dl.load_runs_df()
-BEST = dl.load_best_efforts_df()
-ADV = dl.advanced_metrics_df()
+LOAD_ERROR: str | None = None
+
+
+def _load_frames():
+    global LOAD_ERROR
+    try:
+        return dl.load_runs_df(), dl.load_best_efforts_df(), dl.advanced_metrics_df()
+    except Exception as exc:
+        LOAD_ERROR = f"{type(exc).__name__}: {exc}"
+        empty = pd.DataFrame()
+        return empty, empty.copy(), empty.copy()
+
+
+RUNS, BEST, ADV = _load_frames()
 
 ACCENT = "#fc4c02"  # Strava orange
+ERROR_COLOR = "#c0392b"  # failure notices; distinct from the Strava orange
 TEMPLATE = "plotly_white"
 
 # Columns in the calendar heatmap. strftime("%W") is 00-53, not 00-52: a year
@@ -423,6 +440,25 @@ server = app.server
 
 
 def kpi_cards():
+    if LOAD_ERROR:
+        return html.Div(
+            [
+                html.P(
+                    "Could not read your runs.",
+                    style={"fontWeight": "700", "color": ERROR_COLOR},
+                ),
+                html.Pre(
+                    LOAD_ERROR,
+                    style={"whiteSpace": "pre-wrap", "background": "#fff", "padding": "0.75rem"},
+                ),
+                html.P(
+                    f"Files that are unreadable or not JSON are skipped silently, so this "
+                    f"is a file that parsed but is not shaped as expected. Look in "
+                    f"{dl.RUNS_DIR} for a truncated or hand-edited run."
+                ),
+            ],
+            style={"padding": "2rem", "fontSize": "1.05rem"},
+        )
     if RUNS.empty:
         return html.Div(
             [
@@ -573,7 +609,23 @@ _TABS = {
 
 @app.callback(Output("tab-content", "children"), Input("tabs", "value"))
 def render_tab(tab):
-    return _TABS.get(tab, tab_overview)()
+    builder = _TABS.get(tab, tab_overview)
+    try:
+        return builder()
+    except Exception as exc:
+        # Tabs build lazily, so one bad figure only costs its own tab -- but the
+        # default is Dash's error overlay, which says nothing about which chart
+        # or what to do. Name it and leave the rest of the app usable.
+        return html.Div(
+            [
+                html.P(
+                    f"This tab could not be built: {type(exc).__name__}: {exc}",
+                    style={"fontWeight": "700", "color": ERROR_COLOR},
+                ),
+                html.P("The other tabs are unaffected."),
+            ],
+            style={"padding": "2rem"},
+        )
 
 
 @app.callback(Output("run-detail-body", "children"), Input("run-picker", "value"))
