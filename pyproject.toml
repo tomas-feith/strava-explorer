@@ -51,13 +51,20 @@ python_version = "3.12"
 # should not be able to escape type-checking by not being added to it.
 files = ["."]
 exclude = ["\\.venv", "^data/"]
-ignore_missing_imports = true   # dash / plotly / fitparse ship no stubs
 warn_redundant_casts = true
 warn_unused_ignores = false
 # Pragmatic: fully type-check annotated functions (the analytics + numeric
 # helpers), but don't nitpick the untyped defensive XML-parsing bodies.
 disallow_untyped_defs = false
 check_untyped_defs = false
+
+# Named explicitly rather than a blanket ignore_missing_imports, so an import
+# that stops resolving -- a typo, or a first-party module that moved -- is an
+# error instead of being silently accepted. (dash used to be on this list; it
+# ships type information now, which the blanket flag was hiding.)
+[[tool.mypy.overrides]]
+module = ["plotly.*", "fitparse"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
