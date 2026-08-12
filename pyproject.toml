@@ -10,7 +10,7 @@ authors = [{ name = "Tomás Feith" }]
 dependencies = [
     "requests>=2.31",
     "python-dotenv>=1.0",
-    "dash>=2.17",
+    "dash>=4.4.1",
     "plotly>=5.22",
     "pandas>=3.0.5",
     "numpy>=1.26",
