@@ -8,5 +8,12 @@ venv/
 .ruff_cache/
 .pytest_cache/
 
+# Coverage output. .coverage is a SQLite database that changes on every run --
+# it was tracked for a while and showed up as a diff after each test invocation.
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
 # Claude project notes (personal)
 CLAUDE.md

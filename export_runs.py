@@ -25,8 +25,10 @@ import time
 import requests
 from dotenv import load_dotenv
 
+from paths import runs_dir
+
 API = "https://www.strava.com/api/v3"
-OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "runs")
+OUT_DIR = runs_dir()
 
 # Stream types worth pulling for a run. Strava returns only those that exist.
 STREAM_KEYS = [
@@ -100,21 +102,32 @@ def get_access_token():
     return resp.json()["access_token"]
 
 
+# A 429 costs a 15-minute sleep, so a handful of retries is already an hour of
+# waiting; past that, something is wrong that sleeping will not fix.
+MAX_429_RETRIES = 4
+
+
 def api_get(path, token, limiter, params=None):
-    resp = requests.get(
-        f"{API}{path}",
-        headers={"Authorization": f"Bearer {token}"},
-        params=params,
-        timeout=60,
+    """GET an API path, waiting out rate limits. Raises after MAX_429_RETRIES 429s."""
+    for attempt in range(MAX_429_RETRIES + 1):
+        resp = requests.get(
+            f"{API}{path}",
+            headers={"Authorization": f"Bearer {token}"},
+            params=params,
+            timeout=60,
+        )
+        limiter.update_and_wait(resp)
+        if resp.status_code != 429:
+            resp.raise_for_status()
+            return resp.json()
+        # Belt-and-suspenders: honor a hard 429 even if the headers looked fine.
+        if attempt < MAX_429_RETRIES:
+            print(f"  Got 429 ({attempt + 1}/{MAX_429_RETRIES}); sleeping 15 min then retrying...")
+            time.sleep(15 * 60 + 5)
+    sys.exit(
+        f"Still rate-limited after {MAX_429_RETRIES} retries on {path}. "
+        "Re-run later -- the export resumes where it left off."
     )
-    limiter.update_and_wait(resp)
-    if resp.status_code == 429:
-        # Belt-and-suspenders: honor a hard 429 even if headers looked fine.
-        print("  Got 429; sleeping 15 min then retrying...")
-        time.sleep(15 * 60 + 5)
-        return api_get(path, token, limiter, params)
-    resp.raise_for_status()
-    return resp.json()
 
 
 def list_activities(token, limiter, activity_type):

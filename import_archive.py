@@ -29,7 +29,9 @@ import xml.etree.ElementTree as ET
 import zipfile
 from datetime import UTC, datetime
 
-OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "runs")
+from paths import runs_dir
+
+OUT_DIR = runs_dir()
 
 # Standard distances (metres) for computed best-efforts, matching the API names.
 BEST_EFFORT_DISTANCES = [
@@ -46,12 +48,33 @@ BEST_EFFORT_DISTANCES = [
 # ---------------------------------------------------------------------------
 # Archive access -- works on either a .zip or an already-extracted folder.
 # ---------------------------------------------------------------------------
+class NotAnArchiveError(Exception):
+    """The given path is neither a zip file nor a directory."""
+
+
 class Archive:
+    """Read files out of a Strava export, whether zipped or already extracted.
+
+    Usable as a context manager so the underlying ZipFile handle is released;
+    on Windows an open handle keeps the .zip locked against other processes.
+    """
+
     def __init__(self, path):
         self.path = path
         self.zip = zipfile.ZipFile(path) if zipfile.is_zipfile(path) else None
         if self.zip is None and not os.path.isdir(path):
-            sys.exit(f"Not a zip or directory: {path}")
+            raise NotAnArchiveError(f"Not a zip or directory: {path}")
+
+    def close(self):
+        if self.zip is not None:
+            self.zip.close()
+            self.zip = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info):
+        self.close()
 
     def read(self, rel):
         rel = rel.replace("\\", "/").lstrip("/")
@@ -172,7 +195,10 @@ def parse_fit(data):
         lon = v.get("position_long")
         pts["lat"].append(lat * sc if lat is not None else None)
         pts["lon"].append(lon * sc if lon is not None else None)
-        pts["ele"].append(v.get("enhanced_altitude", v.get("altitude")))
+        # dict.get's default would not help here: devices emit the enhanced_altitude
+        # field with a null value, so the key exists and the fallback never fires.
+        ele = v.get("enhanced_altitude")
+        pts["ele"].append(v.get("altitude") if ele is None else ele)
         ts = v.get("timestamp")
         pts["t"].append(ts.replace(tzinfo=UTC).timestamp() if ts else None)
         pts["hr"].append(v.get("heart_rate"))
@@ -421,12 +447,28 @@ def _parse_csv_date(s):
 
 
 def main():
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("archive", help="Path to the export .zip or extracted folder")
     ap.add_argument("--type", default="Run", help='Activity type to import, or "all". Default: Run')
     args = ap.parse_args()
 
-    arc = Archive(args.archive)
+    try:
+        arc = Archive(args.archive)
+    except NotAnArchiveError as exc:
+        sys.exit(str(exc))
+    with arc:
+        imported, skipped, no_track, errors = _import_all(arc, args.type)
+
+    print(
+        f"\nDone. {imported} runs in {OUT_DIR} | "
+        f"{skipped} non-matching type | {no_track} without a usable track | "
+        f"{errors} parse errors"
+    )
+    print("Now run:  python app.py")
+
+
+def _import_all(arc, want_type):
+    """Walk activities.csv, write one JSON per activity, and tally the outcomes."""
     csv_text = arc.read_csv_text("activities.csv")
     if not csv_text:
         sys.exit("Could not find activities.csv in the archive.")
@@ -437,7 +479,7 @@ def main():
     imported = skipped = no_track = errors = 0
     for row in reader:
         act_type = (_pick(row, "Activity Type") or "").strip()
-        if args.type != "all" and act_type != args.type:
+        if want_type != "all" and act_type != want_type:
             skipped += 1
             continue
         act_id = (_pick(row, "Activity ID") or "").strip()
@@ -482,12 +524,7 @@ def main():
             errors += 1
             print(f"  ! failed {act_id} ({filename}): {e}")
 
-    print(
-        f"\nDone. {imported} runs in {OUT_DIR} | "
-        f"{skipped} non-matching type | {no_track} without a usable track | "
-        f"{errors} parse errors"
-    )
-    print("Now run:  python app.py")
+    return imported, skipped, no_track, errors
 
 
 if __name__ == "__main__":

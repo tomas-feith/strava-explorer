@@ -4,7 +4,8 @@ version = "0.1.0"
 description = "Local dashboard to explore all your Strava runs: heatmaps, pace/PR progression, HR zones, grade-adjusted pace, aerobic decoupling, and per-run routes."
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Tomás Feith" }]
 dependencies = [
     "requests>=2.31",
@@ -45,7 +46,11 @@ select = ["E", "F", "I", "UP", "B", "W"]
 [tool.mypy]
 # 3.12 so mypy can parse modern numpy/pandas type stubs; runtime still >=3.11.
 python_version = "3.12"
-exclude = ["\\.venv"]
+# Check the whole tree rather than a hand-listed set of modules: the list had
+# already gone stale once (freeport.py was missing), and a new top-level module
+# should not be able to escape type-checking by not being added to it.
+files = ["."]
+exclude = ["\\.venv", "^data/"]
 ignore_missing_imports = true   # dash / plotly / fitparse ship no stubs
 warn_redundant_casts = true
 warn_unused_ignores = false
@@ -65,11 +70,11 @@ source = ["."]
 omit = ["tests/*"]
 
 [tool.coverage.report]
-# A ratchet, not an aspiration: currently ~35% (source only -- counting the
-# test files themselves inflated this to 46%). Only catches regressions; raise
-# it as tests land. app.py (the Dash UI), export_runs.py and strava_auth.py are
-# entirely untested today.
-fail_under = 33
+# A ratchet, not an aspiration: currently ~62% (source only -- counting the
+# test files themselves inflated this to 46% back when the floor was 33).
+# Only catches regressions; raise it as tests land. export_runs.py and
+# strava_auth.py are still untested -- both are thin wrappers over live HTTP.
+fail_under = 60
 show_missing = true
 exclude_also = [
     "if __name__ == .__main__.:",

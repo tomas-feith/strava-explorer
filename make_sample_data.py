@@ -12,7 +12,9 @@ import os
 import random
 from datetime import datetime, timedelta
 
-OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "runs")
+from paths import runs_dir
+
+OUT = runs_dir()
 # A loop around a central point (Lisbon-ish) so the map has something to show.
 CENTER = (38.7223, -9.1393)
 
@@ -113,11 +115,16 @@ def make_run(run_id, start):
 
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--n", type=int, default=60)
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--n", type=int, default=60, help="How many runs to generate. Default: 60")
+    ap.add_argument(
+        "--start",
+        default="2025-01-04",
+        help="Date of the first run, YYYY-MM-DD. Default: 2025-01-04",
+    )
     args = ap.parse_args()
     os.makedirs(OUT, exist_ok=True)
-    day = datetime(2025, 1, 4, 7, 30)
+    day = datetime.strptime(args.start, "%Y-%m-%d").replace(hour=7, minute=30)
     for i in range(args.n):
         day += timedelta(days=random.choice([1, 2, 2, 3, 4]))
         run_id = 9_000_000 + i

@@ -10,6 +10,7 @@ when a metric is missing (e.g. no HR stream) so partial data still renders.
 """
 
 import os
+from functools import cache
 
 import numpy as np
 import pandas as pd
@@ -29,6 +30,12 @@ ADV = dl.advanced_metrics_df()
 
 ACCENT = "#fc4c02"  # Strava orange
 TEMPLATE = "plotly_white"
+
+# Columns in the calendar heatmap. strftime("%W") is 00-53, not 00-52: a year
+# that starts on a Monday (2018, 2024, 2029...) puts its last days in week 53.
+# Sizing this to 53 made fig_calendar raise IndexError for exactly those years,
+# and since the tab is built at import time that took the whole app down.
+CALENDAR_WEEKS = 54
 
 
 def _empty_fig(msg="No data"):
@@ -114,16 +121,13 @@ def fig_calendar():
         return _empty_fig()
     year = int(RUNS["year"].max())
     daily = RUNS[RUNS["year"] == year].groupby("date")["distance_km"].sum()
-    start = pd.Timestamp(year, 1, 1)
-    end = pd.Timestamp(year, 12, 31)
-    days = pd.date_range(start, end)
-    vals = pd.Series(daily, index=daily.index)
-    z = np.full((7, 53), np.nan)
-    text = np.empty((7, 53), dtype=object)
+    days = pd.date_range(pd.Timestamp(year, 1, 1), pd.Timestamp(year, 12, 31))
+    z = np.full((7, CALENDAR_WEEKS), np.nan)
+    text = np.empty((7, CALENDAR_WEEKS), dtype=object)
     for day in days:
         wk = int(day.strftime("%W"))
         wd = day.weekday()
-        km = float(vals.get(day.date(), 0.0))
+        km = float(daily.get(day.date(), 0.0))
         z[wd, wk] = km
         text[wd, wk] = f"{day.date()}: {km:.1f} km"
     fig = go.Figure(
@@ -464,84 +468,78 @@ def graph(fig_or_id, **kw):
     return dcc.Graph(figure=fig_or_id, config={"displayModeBar": False}, **kw)
 
 
-tab_overview = html.Div(
-    [
-        kpi_cards(),
-        graph(fig_calendar()),
-        html.Div(
-            [
-                html.Div(graph(fig_weekly_mileage()), className="col"),
-                html.Div(graph(fig_cumulative_ytd()), className="col"),
-            ],
-            className="row",
-        ),
-        graph(fig_dow_hour()),
-    ]
-)
+# Tabs are built on first view, not at import, and cached after that. Building
+# them eagerly meant every figure had to succeed before the server would even
+# start, so a single bad figure took the whole dashboard down -- and startup
+# paid for charts the user might never open.
+def _row(*cols):
+    return html.Div([html.Div(c, className="col") for c in cols], className="row")
 
-tab_performance = html.Div(
-    [
-        graph(fig_pace_over_time()),
-        html.Div(
-            [
-                html.Div(graph(fig_pace_vs_distance()), className="col"),
-                html.Div(graph(fig_best_efforts()), className="col"),
-            ],
-            className="row",
-        ),
-    ]
-)
 
-tab_geography = html.Div([graph(fig_heatmap_map())])
+@cache
+def tab_overview():
+    return html.Div(
+        [
+            kpi_cards(),
+            graph(fig_calendar()),
+            _row(graph(fig_weekly_mileage()), graph(fig_cumulative_ytd())),
+            graph(fig_dow_hour()),
+        ]
+    )
 
-tab_physiology = html.Div(
-    [
-        html.Div(
-            [
-                html.Div(graph(fig_hr_zones()), className="col"),
-                html.Div(graph(fig_cadence_vs_pace()), className="col"),
-            ],
-            className="row",
-        ),
-    ]
-)
 
-tab_advanced = html.Div(
-    [
-        graph(fig_gap_vs_actual()),
-        html.Div(
-            [
-                html.Div(graph(fig_decoupling()), className="col"),
-                html.Div(graph(fig_pace_at_hr()), className="col"),
-            ],
-            className="row",
-        ),
-    ]
-)
+@cache
+def tab_performance():
+    return html.Div(
+        [
+            graph(fig_pace_over_time()),
+            _row(graph(fig_pace_vs_distance()), graph(fig_best_efforts())),
+        ]
+    )
 
-# Run-detail tab is populated by a callback so it can read the dropdown.
-run_options = (
-    [
+
+@cache
+def tab_geography():
+    return html.Div([graph(fig_heatmap_map())])
+
+
+@cache
+def tab_physiology():
+    return html.Div([_row(graph(fig_hr_zones()), graph(fig_cadence_vs_pace()))])
+
+
+@cache
+def tab_advanced():
+    return html.Div(
+        [
+            graph(fig_gap_vs_actual()),
+            _row(graph(fig_decoupling()), graph(fig_pace_at_hr())),
+        ]
+    )
+
+
+@cache
+def tab_detail():
+    """Run picker only; the body below it is filled in by render_run_detail."""
+    options = [
         {"label": f"{r.date} — {r.name} ({r.distance_km:.1f} km)", "value": r.id}
         for r in RUNS.itertuples()
     ]
-    if not RUNS.empty
-    else []
-)
+    return html.Div(
+        [
+            dcc.Dropdown(
+                id="run-picker",
+                options=options,
+                # RUNS is sorted oldest-first, so the last option is the newest run.
+                value=(options[-1]["value"] if options else None),
+                placeholder="Pick a run",
+                clearable=False,
+                style={"maxWidth": "640px", "margin": "1rem 0"},
+            ),
+            html.Div(id="run-detail-body"),
+        ]
+    )
 
-tab_detail = html.Div(
-    [
-        dcc.Dropdown(
-            id="run-picker",
-            options=run_options,
-            value=(run_options[-1]["value"] if run_options else None),
-            placeholder="Pick a run",
-            clearable=False,
-            style={"maxWidth": "640px", "margin": "1rem 0"},
-        ),
-        html.Div(id="run-detail-body"),
-    ]
-)
 
 app.layout = html.Div(
     [
@@ -575,7 +573,7 @@ _TABS = {
 
 @app.callback(Output("tab-content", "children"), Input("tabs", "value"))
 def render_tab(tab):
-    return _TABS.get(tab, tab_overview)
+    return _TABS.get(tab, tab_overview)()
 
 
 @app.callback(Output("run-detail-body", "children"), Input("run-picker", "value"))
@@ -655,6 +653,15 @@ app.index_string = """<!DOCTYPE html>
 if __name__ == "__main__":
     # 8050 is Dash's default and may be taken by another local dashboard. Stash
     # the choice in the environment so the debug reloader's child process
-    # inherits the same port instead of picking a second one.
-    port = os.environ.setdefault("STRAVA_EXPLORER_PORT", str(find_free_port()))
-    app.run(debug=True, port=int(port))
+    # inherits the same port instead of scanning again and picking a second one.
+    # (setdefault would still call find_free_port in the child, since Python
+    # evaluates the default eagerly -- hence the explicit check.)
+    port = os.environ.get("STRAVA_EXPLORER_PORT")
+    if not port:
+        port = str(find_free_port())
+        os.environ["STRAVA_EXPLORER_PORT"] = port
+    # Opt-in: debug mode serves Werkzeug's interactive traceback console, which
+    # executes arbitrary Python from the browser. Handy while editing figures,
+    # not something to leave on by default.
+    debug = os.environ.get("STRAVA_EXPLORER_DEBUG", "").lower() in {"1", "true", "yes"}
+    app.run(debug=debug, port=int(port))

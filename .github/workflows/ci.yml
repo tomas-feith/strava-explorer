@@ -6,7 +6,7 @@ on:
   pull_request:
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 # Least privilege: nothing here writes to the repo.
@@ -44,8 +44,10 @@ jobs:
       - name: Ruff (format check)
         run: uv run ruff format --check .
 
+      # Targets come from [tool.mypy] files in pyproject, so a new module cannot
+      # slip past by not being added to a list here.
       - name: Mypy (type-check)
-        run: uv run mypy app.py data_loader.py import_archive.py export_runs.py strava_auth.py make_sample_data.py freeport.py tests
+        run: uv run mypy
 
       - name: Pytest
         run: uv run pytest -q

@@ -79,18 +79,25 @@ Restart the app to pick up newly imported/exported runs.
 uv sync --extra fit            # install runtime + dev tools
 uv run pre-commit install      # enable ruff + mypy git hooks
 
-uv run pytest                  # tests
+uv run pytest                  # tests (with the coverage floor)
 uv run ruff check .            # lint
-uv run mypy app.py data_loader.py import_archive.py export_runs.py strava_auth.py make_sample_data.py tests
+uv run ruff format --check .   # formatting
+uv run mypy                    # types; targets come from pyproject
 ```
 
 Ruff + mypy run automatically on every commit via pre-commit, and the same
-three checks run in CI (`.github/workflows/ci.yml`) on every push and PR.
-Config lives in `pyproject.toml`.
+checks run in CI (`.github/workflows/ci.yml`) on every push and PR, on both
+Ubuntu and Windows. Config lives in `pyproject.toml`.
 
-Tuning knobs (env vars): `STRAVA_HR_MAX` (HR zones, default 190),
-`STRAVA_FITNESS_HR` (the fixed HR for the fitness trend, default 150),
-`STRAVA_RUNS_DIR` (where the dashboard reads run JSON).
+### Environment variables
+
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `STRAVA_RUNS_DIR` | `data/runs` | Where run JSON lives. Honoured by the dashboard **and** by both importers, so pointing it elsewhere moves the whole pipeline. |
+| `STRAVA_HR_MAX` | `190` | Max HR the zone boundaries are derived from. |
+| `STRAVA_FITNESS_HR` | `150` | The fixed HR for the "pace at a given HR" fitness trend. |
+| `STRAVA_EXPLORER_PORT` | first free from 8050 | Port for the dashboard. Set automatically at startup. |
+| `STRAVA_EXPLORER_DEBUG` | unset (off) | Set to `1` for Dash debug mode. Off by default because it serves an interactive traceback console that runs arbitrary Python. |
 
 ---
 
@@ -107,15 +114,31 @@ Each `data/runs/<id>.json`:
 
 ## Try it without your data
 ```
-uv run python make_sample_data.py --n 60   # writes synthetic runs to data/runs/
+uv run python make_sample_data.py --n 60                  # writes to data/runs/
+uv run python make_sample_data.py --n 90 --start 2024-01-01
 uv run python app.py
 ```
 Delete the samples before importing real data: `rm -rf data/runs`
 
+Better still, keep them out of the way entirely — every tool honours
+`STRAVA_RUNS_DIR`:
+
+```powershell
+$env:STRAVA_RUNS_DIR = "$env:TEMP\strava_demo"
+uv run python make_sample_data.py --n 60
+uv run python app.py
+```
+
 ## Files
+- `paths.py` — the single definition of where run JSON lives (`STRAVA_RUNS_DIR`)
 - `import_archive.py` — bulk-archive → JSON (free path)
 - `export_runs.py` / `strava_auth.py` — Strava API → JSON (subscription path)
 - `data_loader.py` — JSON → tidy DataFrames + derived metrics (incl. analytics)
 - `app.py` — the Dash dashboard
+- `freeport.py` — picks a free port so a second dashboard can't collide
 - `make_sample_data.py` — synthetic data for demos/tests
-- `tests/` — pytest unit tests for the analytics + import helpers
+- `tests/` — pytest unit tests for the analytics, import helpers and figures
+
+## License
+
+MIT — see [LICENSE](LICENSE).

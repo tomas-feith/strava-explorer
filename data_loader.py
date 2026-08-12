@@ -18,10 +18,9 @@ from functools import lru_cache
 import numpy as np
 import pandas as pd
 
-RUNS_DIR = os.environ.get(
-    "STRAVA_RUNS_DIR",
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "runs"),
-)
+from paths import runs_dir
+
+RUNS_DIR = runs_dir()
 
 # Max HR used to derive %-of-max HR zones. Override via STRAVA_HR_MAX env var.
 HR_MAX = int(os.environ.get("STRAVA_HR_MAX", "190"))
