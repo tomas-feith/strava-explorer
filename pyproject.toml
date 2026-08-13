@@ -24,7 +24,7 @@ fit = ["fitparse>=1.2"]
 dev = [
     "pytest>=8.0",
     "mypy>=2.3",
-    "ruff>=0.16",
+    "ruff>=0.16.2",
     "pre-commit>=4.6.1",
     "pandas-stubs>=3.0.5.260730",
     "types-requests>=2.31",
